@@ -9,9 +9,22 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
         input_line.chars().find(|c| c.is_numeric()).is_some()
     } else if pattern.contains("\\w") {
         input_line.chars().find(|c| c.is_alphanumeric()).is_some()
+    } else if is_positive_char_groups(pattern) {
+        match_positive_char_groups(input_line, pattern)
     } else {
         panic!("Unhandled pattern: {}", pattern)
     }
+}
+
+fn is_positive_char_groups(pattern: &str) -> bool {
+    pattern.starts_with('[') && pattern.ends_with(']')
+}
+
+fn match_positive_char_groups(input_line: &str, pattern: &str) -> bool {
+    pattern[1..pattern.len() - 1]
+        .chars()
+        .find(|c| input_line.contains(*c))
+        .is_some()
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
