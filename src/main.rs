@@ -3,41 +3,81 @@ use std::io;
 use std::process;
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    if pattern.chars().count() == 1 {
-        input_line.contains(pattern)
-    } else if pattern.contains("\\d") {
-        input_line.chars().find(|c| c.is_numeric()).is_some()
-    } else if pattern.contains("\\w") {
-        input_line.chars().find(|c| c.is_alphanumeric()).is_some()
-    } else if is_char_groups(pattern) {
-        if is_negative_char_groups(pattern) {
-            match_negative_char_groups(input_line, pattern)
-        } else {
-            match_positive_char_groups(input_line, pattern)
+    let mut i = 0;
+
+    let input_line = input_line.chars().collect::<Vec<_>>();
+    let pattern = pattern.chars().collect::<Vec<_>>();
+
+    while i < input_line.len() {
+        let consumed_pattern = match_next(&input_line[i..], &pattern);
+        if consumed_pattern == pattern.len() {
+            return true;
         }
-    } else {
-        panic!("Unhandled pattern: {}", pattern)
+        i += 1;
     }
+
+    false
 }
 
-fn is_char_groups(pattern: &str) -> bool {
-    pattern.starts_with('[') && pattern.ends_with(']')
+fn match_next(input_line: &[char], pattern: &[char]) -> usize {
+    let mut ix: usize = 0;
+    let mut px: usize = 0;
+
+    while ix < input_line.len() && px < pattern.len() {
+        if pattern[px] == '\\' && pattern[px + 1] == 'd' {
+            if input_line[ix].is_numeric() {
+                px += 2;
+            } else {
+                break;
+            }
+        } else if pattern[px] == '\\' && pattern[px + 1] == 'w' {
+            if input_line[ix].is_alphanumeric() {
+                px += 2;
+            } else {
+                break;
+            } // [asdf] [^]
+        } else if let Some(pos) = is_char_groups(&pattern[px..]) {
+            if pattern[px + 1] == '^' {
+                if px + 2 == pos {
+                    px += pos + 1;
+                } else {
+                    if !pattern[px + 2..px + pos].contains(&input_line[ix]) {
+                        px += pos + 1;
+                    } else {
+                        break;
+                    }
+                }
+            } else {
+                if px + 1 >= pos {
+                    px += pos + 1;
+                } else {
+                    if pattern[px + 1..px + pos].contains(&input_line[ix]) {
+                        px += pos + 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+        } else {
+            if pattern[px] == input_line[ix] {
+                px += 1;
+            } else {
+                break;
+            }
+        }
+
+        ix += 1;
+    }
+
+    px
 }
 
-fn is_negative_char_groups(pattern: &str) -> bool {
-    pattern.starts_with("[^")
-}
-
-fn match_positive_char_groups(input_line: &str, pattern: &str) -> bool {
-    pattern[1..pattern.len() - 1]
-        .chars()
-        .any(|c| input_line.contains(c))
-}
-
-fn match_negative_char_groups(input_line: &str, pattern: &str) -> bool {
-    pattern[2..pattern.len() - 1]
-        .chars()
-        .any(|c| !input_line.contains(c))
+fn is_char_groups(pattern: &[char]) -> Option<usize> {
+    if pattern[0] == '[' {
+        pattern.iter().position(|c| *c == ']')
+    } else {
+        None
+    }
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
