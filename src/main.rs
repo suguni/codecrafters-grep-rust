@@ -35,9 +35,9 @@ fn match_positive_char_groups(input_line: &str, pattern: &str) -> bool {
 }
 
 fn match_negative_char_groups(input_line: &str, pattern: &str) -> bool {
-    !pattern[2..pattern.len() - 1]
+    pattern[2..pattern.len() - 1]
         .chars()
-        .all(|c| input_line.contains(c))
+        .any(|c| !input_line.contains(c))
 }
 
 // Usage: echo <input_text> | your_program.sh -E <pattern>
