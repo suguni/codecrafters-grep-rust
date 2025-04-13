@@ -9,8 +9,7 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     let pattern = pattern.chars().collect::<Vec<_>>();
 
     while i < input_line.len() {
-        let consumed_pattern = match_next(&input_line[i..], &pattern);
-        if consumed_pattern == pattern.len() {
+        if  match_next(&input_line, i, &pattern) {
             return true;
         }
         i += 1;
@@ -19,57 +18,74 @@ fn match_pattern(input_line: &str, pattern: &str) -> bool {
     false
 }
 
-fn match_next(input_line: &[char], pattern: &[char]) -> usize {
-    let mut ix: usize = 0;
-    let mut px: usize = 0;
+fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
+    let mut pat_pos: usize = 0;
+    let mut cur_pos = pos;
+    let mut prev_char: Option<char> = if cur_pos == 0 { None } else { Some(input_line[cur_pos - 1]) };
 
-    while ix < input_line.len() && px < pattern.len() {
-        if pattern[px] == '\\' && pattern[px + 1] == 'd' {
-            if input_line[ix].is_numeric() {
-                px += 2;
-            } else {
-                break;
-            }
-        } else if pattern[px] == '\\' && pattern[px + 1] == 'w' {
-            if input_line[ix].is_alphanumeric() {
-                px += 2;
-            } else {
-                break;
-            } // [asdf] [^]
-        } else if let Some(pos) = is_char_groups(&pattern[px..]) {
-            if pattern[px + 1] == '^' {
-                if px + 2 == pos {
-                    px += pos + 1;
+    while cur_pos < input_line.len() && pat_pos < pattern.len() {
+        let cur_char = input_line[cur_pos];
+        let pat_char = pattern[pat_pos];
+
+        if pat_char == '^' {
+            if let Some(prev_char) = prev_char {
+                if prev_char == '\n' {
+                    pat_pos += 1;
                 } else {
-                    if !pattern[px + 2..px + pos].contains(&input_line[ix]) {
-                        px += pos + 1;
-                    } else {
-                        break;
-                    }
+                    break;
                 }
             } else {
-                if px + 1 >= pos {
-                    px += pos + 1;
-                } else {
-                    if pattern[px + 1..px + pos].contains(&input_line[ix]) {
-                        px += pos + 1;
-                    } else {
-                        break;
-                    }
-                }
+                pat_pos += 1;
             }
         } else {
-            if pattern[px] == input_line[ix] {
-                px += 1;
+            if pat_char == '\\' && pattern[pat_pos + 1] == 'd' {
+                if cur_char.is_numeric() {
+                    pat_pos += 2;
+                } else {
+                    break;
+                }
+            } else if pat_char == '\\' && pattern[pat_pos + 1] == 'w' {
+                if cur_char.is_alphanumeric() {
+                    pat_pos += 2;
+                } else {
+                    break;
+                }
+            } else if let Some(group_end_pos) = is_char_groups(&pattern[pat_pos..]) {
+                if pattern[pat_pos + 1] == '^' {
+                    if pat_pos + 2 == group_end_pos {
+                        pat_pos += group_end_pos + 1;
+                    } else {
+                        if !pattern[pat_pos + 2..pat_pos + group_end_pos].contains(&cur_char) {
+                            pat_pos += group_end_pos + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    if pat_pos + 1 >= group_end_pos {
+                        pat_pos += group_end_pos + 1;
+                    } else {
+                        if pattern[pat_pos + 1..pat_pos + group_end_pos].contains(&cur_char) {
+                            pat_pos += group_end_pos + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                }
             } else {
-                break;
+                if pat_char == cur_char {
+                    pat_pos += 1;
+                } else {
+                    break;
+                }
             }
-        }
 
-        ix += 1;
+            prev_char = Some(cur_char);
+            cur_pos += 1;
+        }
     }
 
-    px
+    pat_pos == pattern.len()
 }
 
 fn is_char_groups(pattern: &[char]) -> Option<usize> {
