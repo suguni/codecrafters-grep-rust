@@ -23,9 +23,12 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
     let mut cur_pos = pos;
     let mut prev_char: Option<char> = if cur_pos == 0 { None } else { Some(input_line[cur_pos - 1]) };
 
-    while cur_pos < input_line.len() && pat_pos < pattern.len() {
-        let cur_char = input_line[cur_pos];
+    while pat_pos < pattern.len() {
         let pat_char = pattern[pat_pos];
+
+        if cur_pos == input_line.len() {
+            return pat_pos == pattern.len() - 1 && pat_char == '$';
+        }
 
         if pat_char == '^' {
             if let Some(prev_char) = prev_char {
@@ -37,7 +40,16 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
             } else {
                 pat_pos += 1;
             }
+        } else if pat_char == '$' {
+            if input_line[cur_pos] == '\n' {
+                pat_pos += 1;
+                cur_pos += 1;
+            } else {
+                break;
+            }
         } else {
+            let cur_char = input_line[cur_pos];
+
             if pat_char == '\\' && pattern[pat_pos + 1] == 'd' {
                 if cur_char.is_numeric() {
                     pat_pos += 2;
