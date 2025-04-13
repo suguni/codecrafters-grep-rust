@@ -25,6 +25,7 @@ enum Quantifier {
     One,
     OneOrMore,
     ZeroOrMore,
+    ZeroOrOne,
 }
 
 fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
@@ -39,10 +40,6 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
     while pat_pos < pattern.len() {
         let pat_char = pattern[pat_pos];
 
-        if cur_pos == input_line.len() {
-            return pat_pos == pattern.len() - 1 && pat_char == '$';
-        }
-
         if pat_char == '^' {
             if let Some(prev_char) = prev_char {
                 if prev_char == '\n' {
@@ -54,9 +51,16 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
                 pat_pos += 1;
             }
         } else if pat_char == '$' {
-            if input_line[cur_pos] == '\n' {
+            if cur_pos >= input_line.len() || input_line[cur_pos] == '\n' {
                 pat_pos += 1;
                 cur_pos += 1;
+            } else {
+                break;
+            }
+        } else if cur_pos >= input_line.len() {
+            let (_, quantifier, pattern_advance) = extract_pattern(&pattern[pat_pos..]);
+            if quantifier == ZeroOrOne {
+                pat_pos += pattern_advance;
             } else {
                 break;
             }
@@ -67,7 +71,7 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
             if matched_count > 0 {
                 prev_char = Some(input_line[cur_pos + matched_count - 1]);
             } else {
-                if quantifier != ZeroOrMore {
+                if quantifier != ZeroOrOne {
                     break;
                 }
             }
@@ -135,13 +139,15 @@ fn extract_char_class(pattern: &[char]) -> (CharCls, usize) {
 
 fn extract_quantifier(pattern: &[char]) -> (Quantifier, usize) {
     if pattern.len() == 0 {
-        (Quantifier::One, 0)
+        (One, 0)
     } else if pattern[0] == '+' {
-        (Quantifier::OneOrMore, 1)
+        (OneOrMore, 1)
     } else if pattern[0] == '*' {
-        (Quantifier::ZeroOrMore, 1)
+        (ZeroOrMore, 1)
+    } else if pattern[0] == '?' {
+        (ZeroOrOne, 1)
     } else {
-        (Quantifier::One, 0)
+        (One, 0)
     }
 }
 
@@ -243,5 +249,11 @@ mod tests {
         assert!(match_pattern("caaat", "ca+t"));
         assert!(match_pattern("caaat", "ca+at"));
         assert!(!match_pattern("ca", "ca+t"));
+    }
+
+    #[test]
+    fn test_zero_or_one_match_pattern() {
+        assert!(match_pattern("dogs", "dogs?"));
+        assert!(match_pattern("dog", "dogs?"));
     }
 }
