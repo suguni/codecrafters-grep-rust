@@ -1,24 +1,26 @@
-use crate::CharCls::{AlphaNumeric, Digit, Literal, NegCharGroup, PosCharGroup};
+use crate::CharCls::*;
+use crate::Quantifier::*;
 use std::env;
 use std::io;
 use std::process;
-use crate::Quantifier::*;
 
 fn match_pattern(input_line: &str, pattern: &str) -> bool {
-    let mut i = 0;
-
     let input_line = input_line.chars().collect::<Vec<_>>();
     let pattern = pattern.chars().collect::<Vec<_>>();
+    match_pattern_internal(&input_line, &pattern)
+}
 
+fn match_pattern_internal(input_line: &[char], pattern: &[char]) -> bool {
+    let mut i = 0;
     while i < input_line.len() {
         if match_next(&input_line, i, &pattern) {
             return true;
         }
         i += 1;
     }
-
     false
 }
+
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Quantifier {
@@ -58,6 +60,7 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
                 break;
             }
         } else if cur_pos >= input_line.len() {
+            // consume all optional pattern
             let (_, quantifier, pattern_advance) = extract_pattern(&pattern[pat_pos..]);
             if quantifier == ZeroOrOne {
                 pat_pos += pattern_advance;
@@ -66,18 +69,23 @@ fn match_next(input_line: &[char], pos: usize, pattern: &[char]) -> bool {
             }
         } else {
             let (char_cls, quantifier, pattern_advance) = extract_pattern(&pattern[pat_pos..]);
-            let matched_count = match_char(&input_line[cur_pos..], &char_cls, quantifier);
 
-            if matched_count > 0 {
-                prev_char = Some(input_line[cur_pos + matched_count - 1]);
+            if char_cls == Any && quantifier == OneOrMore {
+                return pat_pos + pattern_advance >= pattern.len()
+                    || match_pattern_internal(&input_line[cur_pos + 1..], &pattern[pat_pos + pattern_advance..]);
             } else {
-                if quantifier != ZeroOrOne {
-                    break;
+                let matched_count = match_char(&input_line[cur_pos..], &char_cls, quantifier);
+                if matched_count > 0 {
+                    prev_char = Some(input_line[cur_pos + matched_count - 1]);
+                } else {
+                    if quantifier != ZeroOrOne {
+                        break;
+                    }
                 }
-            }
 
-            pat_pos += pattern_advance;
-            cur_pos += matched_count;
+                pat_pos += pattern_advance;
+                cur_pos += matched_count;
+            }
         }
     }
 
@@ -109,8 +117,9 @@ fn extract_pattern(pattern: &[char]) -> (CharCls, Quantifier, usize) {
 enum CharCls<'a> {
     Digit,
     AlphaNumeric,
-    PosCharGroup(&'a [char]),
-    NegCharGroup(&'a [char]),
+    Any,
+    PosGroup(&'a [char]),
+    NegGroup(&'a [char]),
     Literal(char),
 }
 
@@ -123,13 +132,15 @@ fn extract_char_class(pattern: &[char]) -> (CharCls, usize) {
         let is_negative = pattern[1] == '^';
         if let Some(end) = pattern.iter().position(|c| *c == ']') {
             if is_negative {
-                (NegCharGroup(&pattern[2..end]), end + 1)
+                (NegGroup(&pattern[2..end]), end + 1)
             } else {
-                (PosCharGroup(&pattern[1..end]), end + 1)
+                (PosGroup(&pattern[1..end]), end + 1)
             }
         } else {
             (Literal('['), 1)
         }
+    } else if pattern[0] == '.' {
+        (Any, 1)
     } else if pattern[0] != '^' && pattern[0] != '$' {
         (Literal(pattern[0]), 1)
     } else {
@@ -156,16 +167,17 @@ fn match_char(input: &[char], char_cls: &CharCls, quantifier: Quantifier) -> usi
     let mut matched_count = 0;
     loop {
         let matched = match char_cls {
-            Digit => input[pos].is_numeric() ,
-            AlphaNumeric =>  input[pos].is_alphanumeric(),
-            PosCharGroup(group) => group.contains(&input[pos]),
-            NegCharGroup(group) => !group.contains(&input[pos]),
+            Digit => input[pos].is_numeric(),
+            AlphaNumeric => input[pos].is_alphanumeric(),
+            PosGroup(group) => group.contains(&input[pos]),
+            NegGroup(group) => !group.contains(&input[pos]),
             Literal(c) => *c == input[pos],
+            Any => true,
         };
 
         if matched {
             matched_count += 1;
-            if quantifier == One || pos == input.len() - 1 {
+            if quantifier == One || quantifier == ZeroOrOne || pos == input.len() - 1 {
                 break;
             }
         } else {
@@ -200,7 +212,6 @@ fn main() {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::*;
@@ -210,13 +221,13 @@ mod tests {
         let pattern: Vec<char> = "[abcd]".chars().collect();
         let (cls, size) = extract_char_class(&pattern);
         assert_eq!(size, 6);
-        assert_eq!(cls, PosCharGroup(&vec!['a', 'b', 'c', 'd']));
+        assert_eq!(cls, PosGroup(&vec!['a', 'b', 'c', 'd']));
     }
 
     #[test]
     fn test_match_char() {
         let group: Vec<char> = "abcd".chars().collect();
-        let matched_count = match_char(&vec!['a'], &PosCharGroup(&group), One);
+        let matched_count = match_char(&vec!['a'], &PosGroup(&group), One);
         assert_eq!(matched_count, 1);
     }
 
@@ -231,11 +242,17 @@ mod tests {
         let pattern: Vec<char> = "ca+t".chars().collect();
         let (c1, q1, m1) = extract_pattern(&pattern[0..]);
         let (c2, q2, m2) = extract_pattern(&pattern[m1..]);
-        let (c3, q3, m3) = extract_pattern(&pattern[m1+m2..]);
+        let (c3, q3, m3) = extract_pattern(&pattern[m1 + m2..]);
 
-        assert_eq!(c1, Literal('c')); assert_eq!(q1, One); assert_eq!(m1, 1);
-        assert_eq!(c2, Literal('a')); assert_eq!(q2, OneOrMore); assert_eq!(m2, 2);
-        assert_eq!(c3, Literal('t')); assert_eq!(q3, One); assert_eq!(m3, 1);
+        assert_eq!(c1, Literal('c'));
+        assert_eq!(q1, One);
+        assert_eq!(m1, 1);
+        assert_eq!(c2, Literal('a'));
+        assert_eq!(q2, OneOrMore);
+        assert_eq!(m2, 2);
+        assert_eq!(c3, Literal('t'));
+        assert_eq!(q3, One);
+        assert_eq!(m3, 1);
     }
 
     #[test]
@@ -255,5 +272,29 @@ mod tests {
     fn test_zero_or_one_match_pattern() {
         assert!(match_pattern("dogs", "dogs?"));
         assert!(match_pattern("dog", "dogs?"));
+    }
+
+    #[test]
+    fn test_any_match_pattern() {
+        assert!(match_pattern("dog", "d.g"));
+        assert!(!match_pattern("dg", "d.g"));
+        assert!(!match_pattern("dg", "d.?g"));
+        assert!(!match_pattern("og", ".?og"));
+        assert!(match_pattern("oog", ".?og"));
+    }
+
+    #[test]
+    fn test_any_one_more_match_pattern() {
+        assert!(match_pattern("goog", "g.+g"));
+        assert!(match_pattern("goøö0Ogol", "g.+gol"));
+    }
+
+    #[test]
+    fn test_any_match_char() {
+        let match_count = match_char(&vec!['o', 'o', 'g'], &Any, ZeroOrOne);
+        assert_eq!(match_count, 1);
+
+        let match_count = match_char(&vec!['o', 'o', 'g'], &Any, OneOrMore);
+        assert_eq!(match_count, 3);
     }
 }
